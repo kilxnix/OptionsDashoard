@@ -7,6 +7,7 @@ import pandas as pd
 import requests
 import time
 from run_autonomous_scan import run_autonomous_scan
+from scanner_core import convert_numpy_types
 
 app = Flask(__name__)
 
@@ -1208,17 +1209,18 @@ def explosive_earnings_combo():
 💡 METHODOLOGY: Two-phase analysis combining explosive discovery with comprehensive technical analysis
         """.strip()
 
-        return jsonify(combined_results)
+        return jsonify(convert_numpy_types(combined_results))
 
     except Exception as e:
         print(f"❌ Error in explosive-earnings-combo: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({
-            "status": "error", 
+        error_payload = {
+            "status": "error",
             "message": str(e),
             "traceback": traceback.format_exc()
-        }), 500
+        }
+        return jsonify(convert_numpy_types(error_payload)), 500
 
 
 @app.route("/pre-earnings-scan", methods=["GET", "POST"])
