@@ -895,6 +895,7 @@ def run_explosive_scan():
     """Run the explosive options scanner optimized for your API plan"""
     try:
         from explosive_options_scanner import ExplosiveOptionsScanner
+        from scanner_core import auto_discover_optionable_universe
 
         # Get parameters
         if request.method == 'POST' and request.is_json:
@@ -919,6 +920,13 @@ def run_explosive_scan():
             }
             market_data = {}
 
+        # Auto-discover symbols for explosive scan if none provided
+        if not symbols:
+            limit = int(os.getenv("EXPLOSIVE_DISCOVERY_LIMIT", 300))
+            include_etfs = (os.getenv("INCLUDE_ETFS", "1") == "1")
+            symbols = auto_discover_optionable_universe(limit=limit, include_etfs=include_etfs)
+            symbols = sorted(set([s.upper() for s in symbols if s]))
+            print(f"🔍 Auto-discovered {len(symbols)} symbols for explosive scan (limit={limit}, include_etfs={include_etfs})")
         # Initialize scanner
         scanner = ExplosiveOptionsScanner(os.getenv('ALPHA_VANTAGE_API_KEY'))
 
@@ -2779,8 +2787,14 @@ def explosive_52week_combo():
             df.sort_index(inplace=True)
             return df.tail(260)
 
-        from scanner_core import discover_high_volume_movers_expanded
-        symbols_to_scan = discover_high_volume_movers_expanded()
+        from scanner_core import auto_discover_optionable_universe
+        # Auto-discover an optionable symbol universe (deduped, prioritized)
+        limit = int(request.args.get("limit", os.getenv("GAMMA_DISCOVERY_LIMIT", 300)))
+        include_etfs = (request.args.get("include_etfs", os.getenv("INCLUDE_ETFS", "1")) == "1")
+        symbols_to_scan = auto_discover_optionable_universe(limit=limit, include_etfs=include_etfs)
+        # Deduplicate one more time defensively
+        symbols_to_scan = sorted(set([s.upper() for s in symbols_to_scan if s]))
+        print(f"\n🔍 Auto-discovered {len(symbols_to_scan)} symbols to scan (limit={limit}, include_etfs={include_etfs})")
         phase_state = {'count': 0, 'start': time.time()}
         extreme_symbols = {}
 
@@ -3526,7 +3540,7 @@ def gamma_squeeze_scan():
     print("🚀 GAMMA SQUEEZE SCAN INITIATED")
     print("=" * 60)
 
-    from scanner_core import get_optionable_stocks_with_volume, run_scanner
+    from scanner_core import auto_discover_optionable_universe, run_scanner
     from explosive_options_scanner import ExplosiveOptionsScanner # We use this for its robust options fetching
 
     # Helper function to find a gamma wall for a single symbol
@@ -3585,16 +3599,14 @@ def gamma_squeeze_scan():
 
     # --- Main Scan Logic ---
     scanner = ExplosiveOptionsScanner(os.getenv('ALPHA_VANTAGE_API_KEY'))
-    # dynamic, market-wide list with option/liquidity validation
-    symbols_to_check = get_optionable_stocks_with_volume()
+    # Auto-discover an optionable symbol universe (deduped, prioritized)
+    limit = int(request.args.get("limit", os.getenv("GAMMA_DISCOVERY_LIMIT", 300)))
+    include_etfs = (request.args.get("include_etfs", os.getenv("INCLUDE_ETFS", "1")) == "1")
+    symbols_to_check = auto_discover_optionable_universe(limit=limit, include_etfs=include_etfs)
+    # Deduplicate one more time defensively
+    symbols_to_check = sorted(set([s.upper() for s in symbols_to_check if s]))
+    print(f"\n🔍 Auto-discovered {len(symbols_to_check)} symbols to scan (limit={limit}, include_etfs={include_etfs})")
 
-    # (optional but recommended) respect a ?limit= param, default 600
-    try:
-        limit = int(request.args.get("limit", 600))
-        if limit > 0:
-            symbols_to_check = symbols_to_check[:limit]
-    except Exception:
-        pass
 
 
     gamma_squeeze_candidates = []

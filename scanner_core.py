@@ -2828,3 +2828,63 @@ class IntelligentTradePlanner:
         except Exception as e:
             print(f"Error generating intelligent trade plan: {e}")
             return None
+# === Auto-discovery of optionable universe (cached) ===
+_DISCOVERY_CACHE = {"ts": 0, "symbols": []}
+
+def _is_probable_etf(symbol: str) -> bool:
+    """Heuristic ETF check; conservative list + common leveraged ETFs."""
+    if not symbol:
+        return False
+    etfs = {
+        "SPY","QQQ","IWM","DIA","VTI","EFA","EEM","GLD","SLV",
+        "XLF","XLE","XLK","XLV","XLI","XLP","XLU","XLB","XLRE","XLY",
+        "SOXL","SOXS","TQQQ","SQQQ","UVXY","VXX"
+    }
+    return symbol.upper() in etfs
+
+def auto_discover_optionable_universe(limit: int = 300, include_etfs: bool = True, cache_minutes: int = 10):
+    """Return a deduplicated, prioritized list of symbols to scan.
+    Uses multiple sources and validates basic optionability/volume via existing helpers.
+    Caches results for cache_minutes to minimize API calls.
+    """
+    try:
+        now = int(time.time())
+        if cache_minutes and _DISCOVERY_CACHE["ts"] and (now - _DISCOVERY_CACHE["ts"] < cache_minutes * 60):
+            symbols = _DISCOVERY_CACHE["symbols"]
+        else:
+            # Base universe from volume/liquidity helper
+            base = get_optionable_stocks_with_volume()
+            # Supplemental "explosive" ideas (if API key present)
+            extra = []
+            try:
+                av_key = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+                if av_key:
+                    extra = discover_explosive_optionable_stocks()
+            except Exception:
+                extra = []
+            # Merge + dedupe
+            combined = []
+            seen = set()
+            for s in (base or []) + (extra or []):
+                if not s:
+                    continue
+                su = s.upper()
+                if not include_etfs and _is_probable_etf(su):
+                    continue
+                if su not in seen:
+                    seen.add(su)
+                    combined.append(su)
+            # Prioritize using existing dynamic filter
+            prioritized = filter_and_prioritize_symbols_dynamic(combined)
+            symbols = prioritized
+            _DISCOVERY_CACHE["ts"] = now
+            _DISCOVERY_CACHE["symbols"] = symbols
+        # Hard cap
+        return symbols[: int(limit) if limit else 300 ]
+    except Exception as e:
+        print(f"[auto_discover_optionable_universe] fallback due to error: {e}")
+        # graceful fallback to existing helper
+        fallback = get_optionable_stocks_with_volume() or []
+        if not include_etfs:
+            fallback = [s for s in fallback if not _is_probable_etf(s)]
+        return fallback[: int(limit) if limit else 300 ]
